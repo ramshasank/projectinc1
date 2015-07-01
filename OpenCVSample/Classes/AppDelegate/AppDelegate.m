@@ -14,6 +14,8 @@
 
 @implementation AppDelegate
 
+
+
 - (CMMotionManager *)sharedManager
 {
     static dispatch_once_t onceToken;

@@ -8,8 +8,17 @@
 #import "GCDAsyncSocket.h"
 #include <ifaddrs.h>
 #include <arpa/inet.h>
-#import "FGTranslator.h"
-#import "SVProgressHUD.h"
+#import "AbstractOCVViewController.h"
+#import <opencv2/imgproc/imgproc_c.h>
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
+#import <opencv2/objdetect/objdetect.hpp>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#import "opencv2/opencv.hpp"
+#import <MessageUI/MFMessageComposeViewController.h>
+
 
 
 #define WELCOME_MSG  0
@@ -29,21 +38,18 @@ using namespace cv;
 
 @interface ColorCircleViewController ()
 {
-
-    
-    BOOL isRunning;
+BOOL isRunning;
 
     dispatch_queue_t socketQueue;
     NSMutableArray *connectedSockets;
     GCDAsyncSocket *listenSocket;
-    
-   
 
 }
 
 @property (nonatomic, strong) RoboMe *roboMe;
 @property (nonatomic, weak) IBOutlet UITextView *textView;
 @property (nonatomic, strong) AVAudioPlayer* player;
+@property (nonatomic,strong) MPMoviePlayerController* mp;
 
 
 @end
@@ -58,19 +64,18 @@ using namespace cv;
 {
     [super viewDidLoad];
     
-    
-    // not needed in production code, but making sure the demo is clean on each run
-    [FGTranslator flushCache];
-    [FGTranslator flushCredentials];
-    
     [self tappedOnRed:nil];
+    
+    
     NSBundle *mainBundle = [NSBundle mainBundle];
     NSString *filePath = [mainBundle pathForResource:@"every" ofType:@"mp3"];
     NSData *fileData = [NSData dataWithContentsOfFile:filePath];
     
     NSError *error = nil;
     
+    
     self.player = [[AVAudioPlayer alloc] initWithData:fileData error:&error];
+
     
     
     // create RoboMe object
@@ -98,114 +103,6 @@ using namespace cv;
     
   //  [self startUpdatesWithSliderValue:1];
     
-}
-
-- (FGTranslator *)translator {
-    /*
-     * using Bing Translate
-     *
-     * Note: The client id and secret here is very limited and is included for demo purposes only.
-     * You must use your own credentials for production apps.
-     */
-    FGTranslator *translator = [[FGTranslator alloc] initWithBingAzureClientId:@"a2f847fc-3e97-4eda-841f-5df456b4d624" secret:@"1BT6vR98hXgVPZrjNCDpq2GWF2APqw+FnoUApzDitdM="];
-    
-    // or use Google Translate
-    
-    // using Google Translate
-    // translator = [[FGTranslator alloc] initWithGoogleAPIKey:@"your_google_key"];
-    
-    return translator;
-}
-
-- (NSLocale *)currentLocale {
-    NSLocale *locale = [NSLocale currentLocale];
-#if TARGET_IPHONE_SIMULATOR
-    // handling Apple bug
-    // http://stackoverflow.com/a/26769277/211692
-    return [NSLocale localeWithLocaleIdentifier:[locale localeIdentifier]];
-#else
-    return locale;
-#endif
-}
-
--(void)translate
-{
-    
-    [SVProgressHUD show];
-    
-    [self.textView resignFirstResponder];
-    
-    [self.translator translateText:self.textView.text
-                        completion:^(NSError *error, NSString *translated, NSString *sourceLanguage)
-     {
-         if (error)
-         {
-             [self showErrorWithError:error];
-             
-             [SVProgressHUD dismiss];
-         }
-         else
-         {
-             NSString *fromLanguage = [[self currentLocale] displayNameForKey:NSLocaleIdentifier value:sourceLanguage];
-             
-             UIAlertView *alert = [[UIAlertView alloc] initWithTitle:fromLanguage ? [NSString stringWithFormat:@"from %@", fromLanguage] : nil
-                                                             message:translated
-                                                            delegate:nil
-                                                   cancelButtonTitle:@"OK"
-                                                   otherButtonTitles:nil];
-             [alert show];
-             
-             [SVProgressHUD dismiss];
-         }
-     }];
-
-}
-
--(void) languagedetect
-{
-    [SVProgressHUD show];
-    
-    [self.textView resignFirstResponder];
-    
-    
-    [self.translator detectLanguage:self.textView.text completion:^(NSError *error, NSString *detectedSource, float confidence)
-     {
-         if (error)
-         {
-             [self showErrorWithError:error];
-             
-             [SVProgressHUD dismiss];
-         }
-         else
-         {
-             NSString *fromLanguage = [[self currentLocale] displayNameForKey:NSLocaleIdentifier value:detectedSource];
-             
-             NSString *confidenceMessage = confidence == FGTranslatorUnknownConfidence
-             ? @"unknown confidence"
-             : [NSString stringWithFormat:@"%.1f%% sure", confidence * 100];
-             
-             UIAlertView *alert = [[UIAlertView alloc] initWithTitle:fromLanguage
-                                                             message:confidenceMessage
-                                                            delegate:nil
-                                                   cancelButtonTitle:@"OK"
-                                                   otherButtonTitles:nil];
-             [alert show];
-             
-             [SVProgressHUD dismiss];
-         }
-     }];
-
-}
-
-- (void)showErrorWithError:(NSError *)error
-{
-    NSLog(@"FGTranslator failed with error: %@", error);
-    
-    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Error"
-                                                    message:error.localizedDescription
-                                                   delegate:nil
-                                          cancelButtonTitle:@"OK" otherButtonTitles:nil];
-    [alert show];
 }
 
 // Event commands received from RoboMe
@@ -281,7 +178,6 @@ using namespace cv;
     return @"";
 }
 
-
 - (void)perform:(NSString *)command {
     
     NSString *cmd = [command uppercaseString];
@@ -302,14 +198,37 @@ using namespace cv;
     } else if ([cmd isEqualToString: @"SING"])
     {
         [_player play];
-    } else if ([cmd isEqualToString:@"TRANSLATE"])
-    {
-        self.translate;
+    } else if ([cmd isEqualToString:@"PAUSE"]){
+        [_player stop];
+    } else if ([cmd isEqualToString:@"CALL"]){
+        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"tel:8167197679"]];
+    } else if ([cmd isEqualToString:@"CAMERA"]){
+        [self takeasnap];
+    } else if ([cmd isEqualToString:@"MOVIE"]){
+        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://www.youtube.com/watch?v=NPW3mvAN0Rc"]];
+        
     }
 }
 
+
 #pragma mark -
 #pragma mark Socket
+
+-(void) takeasnap
+{
+
+    
+    
+    UIImagePickerController *picker = [[UIImagePickerController alloc] init];
+    [picker setTitle:@"Take a photo."];
+    // [poc setDelegate:self];
+    [picker setSourceType:UIImagePickerControllerSourceTypeCamera];
+    picker.showsCameraControls = NO;
+    NSLog(@"Before taking picture");
+    [picker takePicture];
+    NSLog(@"Picture is taken");
+}
+
 
 - (void)toggleSocketState
 {
@@ -619,7 +538,7 @@ static const NSTimeInterval deviceMotionMin = 0.5;
            // NSLog(@"Z" @"%f",c);
         
             
-           /* if(circles.size()>0)
+            /*if(circles.size()>0)
             {
                 NSLog(@"STOP");
                 [self.roboMe sendCommand:kRobot_Stop];
